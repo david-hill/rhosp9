@@ -108,13 +108,6 @@ parameters:
     default: false
     description: Enable IPv6 features in Memcached.
     type: boolean
-  MigrationSshKey:
-    type: json
-    description: >
-      SSH key for migration.
-      Expects a dictionary with keys 'public_key' and 'private_key'.
-      Values should be identical to SSH public/private key files.
-    default: {}
   NeutronExternalNetworkBridge:
     description: Name of bridge used for external network traffic.
     type: string
@@ -289,11 +282,13 @@ parameters:
     type: string
     default: unset
     description: Salt for the rabbit cookie, change this to force the randomly generated rabbit cookie to change.
+  # FIXME: 'guest' is provisioned in RabbitMQ by default, we should create a user if these are changed
   RabbitUserName:
     default: guest
     description: The username for RabbitMQ
     type: string
   RabbitPassword:
+    default: guest
     description: The password for RabbitMQ
     type: string
     hidden: true
@@ -309,7 +304,7 @@ parameters:
     type: number
   # We need to set this as string because 'unlimited' is a valid setting
   RabbitFDLimit:
-    default: 65536
+    default: 16384
     description: Configures RabbitMQ FD limit
     type: string
   RabbitIPv6:
@@ -389,6 +384,8 @@ parameters:
   ControllerCount:
     type: number
     default: 1
+    constraints:
+      - range: {min: 1}
   controllerExtraConfig:
     default: {}
     description: |
@@ -703,8 +700,6 @@ parameters:
       BlockStorageHostnameResolveNetwork: internal_api
       ObjectStorageHostnameResolveNetwork: internal_api
       CephStorageHostnameResolveNetwork: storage
-      NovaColdMigrationNetwork: ctlplane
-      NovaLibvirtNetwork: internal_api
     description: Mapping of service_name -> network name. Typically set
                  via parameter_defaults in the resource registry.
     type: json
@@ -1061,7 +1056,6 @@ resources:
           KeyName: {get_param: KeyName}
           KeystoneAdminApiVirtualIP: {get_attr: [VipMap, net_ip_map, {get_param: [ServiceNetMap, KeystoneAdminApiNetwork]}]}
           KeystonePublicApiVirtualIP: {get_attr: [VipMap, net_ip_map, {get_param: [ServiceNetMap, KeystonePublicApiNetwork]}]}
-          MigrationSshKey: {get_param: MigrationSshKey}
           NeutronBridgeMappings: {get_param: NeutronBridgeMappings}
           NeutronTenantMtu: {get_param: NeutronTenantMtu}
           NeutronEnableTunnelling: {get_param: NeutronEnableTunnelling}
@@ -1646,21 +1640,6 @@ resources:
         allnodes_extra: {get_attr: [AllNodesExtraConfig, config_identifier]}
         cephstorage_config: {get_attr: [CephStorage, attributes, config_identifier]}
         deployment_identifier: {get_param: DeployIdentifier}
-
-  SshKnownHostsConfig:
-    type: OS::TripleO::Ssh::KnownHostsConfig
-    properties:
-      known_hosts:
-        list_join:
-          - ''
-          - {get_attr: [Compute, known_hosts_entry]}
-
-  ComputeSshKnownHostsDeployment:
-    type: OS::Heat::StructuredDeployments
-    properties:
-      name: ComputeSshKnownHostsDeployment
-      config: {get_resource: SshKnownHostsConfig}
-      servers: {get_attr: [Compute, attributes, nova_server_resource]}
 
 outputs:
   KeystoneURL:

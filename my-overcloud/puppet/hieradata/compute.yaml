@@ -7,6 +7,8 @@ nova::compute::instance_usage_audit: true
 nova::compute::instance_usage_audit_period: 'hour'
 nova::compute::vnc_enabled: true
 
+nova::compute::libvirt::migration_support: true
+
 nova::compute::rbd::libvirt_rbd_secret_uuid: "%{hiera('ceph::profile::params::fsid')}"
 
 # Changing the default from 512MB. The current templates can not deploy

@@ -22,9 +22,6 @@ resource_registry:
   OS::TripleO::AllNodes::SoftwareConfig: puppet/all-nodes-config.yaml
   OS::TripleO::BootstrapNode::SoftwareConfig: puppet/bootstrap-config.yaml
 
-  OS::TripleO::Ssh::HostPubKey: extraconfig/tasks/ssh/host_public_key.yaml
-  OS::TripleO::Ssh::KnownHostsConfig: extraconfig/tasks/ssh/known_hosts_config.yaml
-
   # Tasks (for internal TripleO usage)
   OS::TripleO::Tasks::UpdateWorkflow: extraconfig/tasks/noop.yaml
   OS::TripleO::Tasks::PackageUpdate: extraconfig/tasks/yum_update.yaml

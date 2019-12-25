@@ -22,11 +22,6 @@ Exec <| tag == 'kmod::load' |>  -> Sysctl <| |>
 
 if count(hiera('ntp::servers')) > 0 {
   include ::ntp
-  ensure_resource('service', 'chronyd', {
-    ensure => 'stopped',
-    enable => false,
-  })
-  Service['chronyd'] -> Class['ntp']
 }
 
 include ::timezone

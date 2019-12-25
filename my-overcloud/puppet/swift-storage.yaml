@@ -38,15 +38,6 @@ parameters:
     type: number
     default: 3
     description: How many replicas to use in the swift rings.
-  SnmpdConfigOverride:
-    default: []
-    description: An array of snmp config.
-    # Example: ['proc neutron-server', 'proc nova-api']
-    # Note: since we give total freedom to configure snmpd_config and don't
-    # verify the content, the user will have to ensure that the parameters
-    # related to user / password in the array, are the same given to
-    # THT via SnmpdReadonlyUserName and SnmpdReadonlyUserPassword.
-    type: json
   SnmpdReadonlyUserName:
     default: ro_snmp_user
     description: The user name for SNMPd with readonly rights running on all Overcloud nodes
@@ -284,7 +275,6 @@ resources:
                 tripleo::ringbuilder::min_part_hours: { get_input: swift_min_part_hours }
                 ntp::servers: {get_input: ntp_servers}
                 timezone::timezone: {get_input: timezone}
-                snmpd_config_override: {get_input: snmpd_config_override}
                 snmpd_readonly_user_name: {get_input: snmpd_readonly_user_name}
                 snmpd_readonly_user_password: {get_input: snmpd_readonly_user_password}
                 tripleo::packages::enable_install: {get_input: enable_package_install}
@@ -300,7 +290,6 @@ resources:
       config: {get_resource: SwiftStorageHieraConfig}
       input_values:
         local_ip: {get_attr: [SwiftStorage, networks, ctlplane, 0]}
-        snmpd_config_override: {get_param: SnmpdConfigOverride}
         snmpd_readonly_user_name: {get_param: SnmpdReadonlyUserName}
         snmpd_readonly_user_password: {get_param: SnmpdReadonlyUserPassword}
         swift_hash_suffix: {get_param: HashSuffix}

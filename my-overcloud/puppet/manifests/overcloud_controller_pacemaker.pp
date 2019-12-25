@@ -66,11 +66,6 @@ if hiera('step') >= 1 {
 
   if count(hiera('ntp::servers')) > 0 {
     include ::ntp
-    ensure_resource('service', 'chronyd', {
-      ensure => 'stopped',
-      enable => false,
-    })
-    Service['chronyd'] -> Class['ntp']
   }
 
   $controller_node_ips = split(hiera('controller_node_ips'), ',')
@@ -122,14 +117,20 @@ if hiera('step') >= 1 {
   # config (eg. binding on 0.0.0.0)
   # The module ignores erlang_cookie if cluster_config is false
   $rabbit_ipv6 = str2bool(hiera('rabbit_ipv6', false))
+  if $rabbit_ipv6 {
+      $rabbit_env = merge(hiera('rabbitmq_environment'), {
+        'RABBITMQ_SERVER_START_ARGS' => '"-proto_dist inet6_tcp"'
+      })
+  } else {
+    $rabbit_env = hiera('rabbitmq_environment')
+  }
 
   class { '::rabbitmq':
     service_manage          => false,
     tcp_keepalive           => false,
     config_kernel_variables => hiera('rabbitmq_kernel_variables'),
     config_variables        => hiera('rabbitmq_config_variables'),
-    environment_variables   => hiera('rabbitmq_environment'),
-    ipv6                    => $rabbit_ipv6,
+    environment_variables   => $rabbit_env,
   } ->
   file { '/var/lib/rabbitmq/.erlang.cookie':
     ensure  => file,
@@ -236,16 +237,15 @@ if hiera('step') >= 2 {
 
   if $pacemaker_master {
 
-    include ::pacemaker::resource_defaults
-
-    # Create an openstack-core dummy resource. See RHBZ 1290121
-    pacemaker::resource::ocf { 'openstack-core':
-      ocf_agent_name => 'heartbeat:Dummy',
-      clone_params   => 'interleave=true',
-    }
-
     if $enable_load_balancer {
 
+      include ::pacemaker::resource_defaults
+
+      # Create an openstack-core dummy resource. See RHBZ 1290121
+      pacemaker::resource::ocf { 'openstack-core':
+        ocf_agent_name => 'heartbeat:Dummy',
+        clone_params   => true,
+      }
       # FIXME: we should not have to access tripleo::loadbalancer class
       # parameters here to configure pacemaker VIPs. The configuration
       # of pacemaker VIPs could move into puppet-tripleo or we should
@@ -483,32 +483,39 @@ if hiera('step') >= 2 {
       require         => Class['::redis'],
     }
 
-    exec { 'galera-ready' :
-      command     => '/usr/bin/clustercheck >/dev/null',
-      timeout     => 30,
-      tries       => 180,
-      try_sleep   => 10,
-      environment => ['AVAILABLE_WHEN_READONLY=0'],
-      require     => Exec['create-root-sysconfig-clustercheck'],
-    }
+  }
 
-    # We add a clustercheck db user and we will switch /etc/sysconfig/clustercheck
-    # to it in a later step. We do this only on one node as it will replicate on
-    # the other members. We also make sure that the permissions are the minimum necessary
-    mysql_user { 'clustercheck@localhost':
-      ensure        => 'present',
-      password_hash => mysql_password(hiera('mysql_clustercheck_password')),
-      require       => Exec['galera-ready'],
-    }
-    mysql_grant { 'clustercheck@localhost/*.*':
-      ensure     => 'present',
-      options    => ['GRANT'],
-      privileges => ['PROCESS'],
-      table      => '*.*',
-      user       => 'clustercheck@localhost',
-    }
+  exec { 'galera-ready' :
+    command     => '/usr/bin/clustercheck >/dev/null',
+    timeout     => 30,
+    tries       => 180,
+    try_sleep   => 10,
+    environment => ['AVAILABLE_WHEN_READONLY=0'],
+    require     => File['/etc/sysconfig/clustercheck'],
+  }
 
-    # Create all the database schemas
+  file { '/etc/sysconfig/clustercheck' :
+    ensure  => file,
+    content => "MYSQL_USERNAME=root\n
+MYSQL_PASSWORD=''\n
+MYSQL_HOST=localhost\n",
+  }
+
+  xinetd::service { 'galera-monitor' :
+    port           => '9200',
+    server         => '/usr/bin/clustercheck',
+    per_source     => 'UNLIMITED',
+    log_on_success => '',
+    log_on_failure => 'HOST',
+    flags          => 'REUSE',
+    service_type   => 'UNLISTED',
+    user           => 'root',
+    group          => 'root',
+    require        => File['/etc/sysconfig/clustercheck'],
+  }
+
+  # Create all the database schemas
+  if $sync_db {
     class { '::keystone::db::mysql':
       require => Exec['galera-ready'],
     }
@@ -545,27 +552,6 @@ if hiera('step') >= 2 {
     class { '::sahara::db::mysql':
       require       => Exec['galera-ready'],
     }
-  }
-  # This step is to create a sysconfig clustercheck file with the root user and empty password
-  # on the first install only (because later on the clustercheck db user will be used)
-  # We are using exec and not file in order to not have duplicate definition errors in puppet
-  # when we later set the the file to contain the clustercheck data
-  exec { 'create-root-sysconfig-clustercheck':
-    command => "/bin/echo 'MYSQL_USERNAME=root\nMYSQL_PASSWORD=\'\'\nMYSQL_HOST=localhost\n' > /etc/sysconfig/clustercheck",
-    unless  => '/bin/test -e /etc/sysconfig/clustercheck && grep -q clustercheck /etc/sysconfig/clustercheck',
-  }
-
-  xinetd::service { 'galera-monitor' :
-    port           => '9200',
-    server         => '/usr/bin/clustercheck',
-    per_source     => 'UNLIMITED',
-    log_on_success => '',
-    log_on_failure => 'HOST',
-    flags          => 'REUSE',
-    service_type   => 'UNLISTED',
-    user           => 'root',
-    group          => 'root',
-    require        => Exec['create-root-sysconfig-clustercheck'],
   }
 
   # pre-install swift here so we can build rings
@@ -625,18 +611,6 @@ if hiera('step') >= 2 {
 } #END STEP 2
 
 if hiera('step') >= 3 {
-  # At this stage we are guaranteed that the clustercheck db user exists
-  # so we switch the resource agent to use it.
-  $mysql_clustercheck_password = hiera('mysql_clustercheck_password')
-  file { '/etc/sysconfig/clustercheck' :
-    ensure  => file,
-    mode    => '0600',
-    owner   => 'root',
-    group   => 'root',
-    content => "MYSQL_USERNAME=clustercheck\n
-MYSQL_PASSWORD='${mysql_clustercheck_password}'\n
-MYSQL_HOST=localhost\n",
-  }
 
   class { '::keystone':
     sync_db          => $sync_db,
@@ -686,6 +660,17 @@ MYSQL_HOST=localhost\n",
   $http_store = ['glance.store.http.Store']
   $glance_store = concat($http_store, $backend_store)
 
+  if $glance_backend == 'file' and hiera('glance_file_pcmk_manage', false) {
+    $secontext = 'context="system_u:object_r:glance_var_lib_t:s0"'
+    pacemaker::resource::filesystem { 'glance-fs':
+      device       => hiera('glance_file_pcmk_device'),
+      directory    => hiera('glance_file_pcmk_directory'),
+      fstype       => hiera('glance_file_pcmk_fstype'),
+      fsoptions    => join([$secontext, hiera('glance_file_pcmk_options', '')],','),
+      clone_params => '',
+    }
+  }
+
   # TODO: notifications, scrubber, etc.
   include ::glance
   include ::glance::config
@@ -710,13 +695,9 @@ MYSQL_HOST=localhost\n",
   }
 
   class { '::nova' :
-    memcached_servers => $memcached_servers,
+    memcached_servers => $memcached_servers
   }
-  class { '::nova::cache' :
-    backend          => 'oslo_cache.memcache_pool',
-    enabled          => true,
-    memcache_servers => $memcached_servers,
-  }
+
   include ::nova::config
 
   class { '::nova::api' :
@@ -833,7 +814,7 @@ MYSQL_HOST=localhost\n",
       enabled        => false,
     }
     file { '/etc/neutron/dnsmasq-neutron.conf':
-      content => hiera('neutron_dnsmasq_options', ''),
+      content => hiera('neutron_dnsmasq_options'),
       owner   => 'neutron',
       group   => 'neutron',
       notify  => Service['neutron-dhcp-service'],
@@ -1067,7 +1048,6 @@ MYSQL_HOST=localhost\n",
   include ::swift::proxy::catch_errors
   include ::swift::proxy::tempurl
   include ::swift::proxy::formpost
-  include ::swift::proxy::bulk
 
   # swift storage
   if str2bool(hiera('enable_swift_storage', true)) {
@@ -1159,15 +1139,6 @@ MYSQL_HOST=localhost\n",
     manage_service => false,
     enabled        => false,
   }
-  # Domain resources will be created at step5 on the pacemaker_master
-  # So we configure heat.conf at step3 and 4 but actually create the domain later.
-  if hiera('step') == 3 or hiera('step') == 4 {
-    class { '::heat::keystone::domain':
-      manage_domain => false,
-      manage_user   => false,
-      manage_role   => false,
-    }
-  }
 
   # httpd/apache and horizon
   # NOTE(gfidente): server-status can be consumed by the pacemaker resource agent
@@ -1182,7 +1153,7 @@ MYSQL_HOST=localhost\n",
   } else {
     $_profile_support = 'None'
   }
-  $neutron_options   = merge({'profile_support' => $_profile_support },hiera('horizon::neutron_options',undef))
+  $neutron_options   = {'profile_support' => $_profile_support }
 
   $memcached_ipv6 = hiera('memcached_ipv6', false)
   if $memcached_ipv6 {
@@ -1194,7 +1165,6 @@ MYSQL_HOST=localhost\n",
   class { '::horizon':
     cache_server_ip => $horizon_memcached_servers,
     neutron_options => $neutron_options,
-    help_url        => 'https://access.redhat.com/documentation/en/red-hat-openstack-platform/',
   }
 
   # Aodh
@@ -1262,15 +1232,9 @@ MYSQL_HOST=localhost\n",
     authtype => 'MD5',
     authpass => hiera('snmpd_readonly_user_password'),
   }
-  include ::stdlib
-  if empty(any2array(hiera('snmpd_config_override', ''))) {
-    $snmpd_config_real = [ join(['createUser ', hiera('snmpd_readonly_user_name'), ' MD5 "', hiera('snmpd_readonly_user_password'), '"']), join(['rouser ', hiera('snmpd_readonly_user_name')]), 'proc  cron', 'includeAllDisks  10%', 'master agentx', 'trapsink localhost public', 'iquerySecName internalUser', 'rouser internalUser', 'defaultMonitors yes', 'linkUpDownNotifications yes' ]
-  } else {
-    $snmpd_config_real = any2array(hiera('snmpd_config_override', ''))
-  }
   class { '::snmp':
     agentaddress => ['udp:161','udp6:[::1]:161'],
-    snmpd_config => $snmpd_config_real,
+    snmpd_config => [ join(['createUser ', hiera('snmpd_readonly_user_name'), ' MD5 "', hiera('snmpd_readonly_user_password'), '"']), join(['rouser ', hiera('snmpd_readonly_user_name')]), 'proc  cron', 'includeAllDisks  10%', 'master agentx', 'trapsink localhost public', 'iquerySecName internalUser', 'rouser internalUser', 'defaultMonitors yes', 'linkUpDownNotifications yes' ],
   }
 
   hiera_include('controller_classes')
@@ -1416,29 +1380,8 @@ if hiera('step') >= 4 {
       require         => [Pacemaker::Resource::Service[$::sahara::params::api_service_name],
                           Pacemaker::Resource::Ocf['openstack-core']],
     }
-    pacemaker::constraint::base { 'sahara-api-then-sahara-engine-constraint':
-      constraint_type => 'order',
-      first_resource  => "${::sahara::params::api_service_name}-clone",
-      second_resource => "${::sahara::params::engine_service_name}-clone",
-      first_action    => 'start',
-      second_action   => 'start',
-      require         => [Pacemaker::Resource::Service[$::sahara::params::api_service_name],
-                          Pacemaker::Resource::Service[$::sahara::params::engine_service_name]],
-    }
 
     # Glance
-    if $glance_backend == 'file' and hiera('glance_file_pcmk_manage', false) {
-      $secontext = 'context="system_u:object_r:glance_var_lib_t:s0"'
-      pacemaker::resource::filesystem { 'glance-fs':
-        device           => hiera('glance_file_pcmk_device'),
-        directory        => hiera('glance_file_pcmk_directory'),
-        fstype           => hiera('glance_file_pcmk_fstype'),
-        fsoptions        => join([$secontext, hiera('glance_file_pcmk_options', '')],','),
-        verify_on_create => true,
-        clone_params     => '',
-      }
-    }
-
     pacemaker::resource::service { $::glance::params::registry_service_name :
       clone_params => 'interleave=true',
       require      => Pacemaker::Resource::Ocf['openstack-core'],
@@ -1608,7 +1551,7 @@ if hiera('step') >= 4 {
                     Pacemaker::Resource::Service[$::neutron::params::dhcp_agent_service]],
       }
     }
-    if hiera('neutron::enable_dhcp_agent',true) and hiera('neutron::enable_l3_agent',true) {
+    if hiera('neutron::enable_dhcp_agent',true) and hiera('l3_agent_service',true) {
       pacemaker::constraint::base { 'neutron-dhcp-agent-to-l3-agent-constraint':
         constraint_type => 'order',
         first_resource  => "${::neutron::params::dhcp_agent_service}-clone",
@@ -1841,15 +1784,6 @@ if hiera('step') >= 4 {
       require         => [Pacemaker::Resource::Service[$::ceilometer::params::agent_central_service_name],
                           Pacemaker::Resource::Ocf['openstack-core']],
     }
-    pacemaker::constraint::base { 'keystone-then-ceilometer-notification-constraint':
-      constraint_type => 'order',
-      first_resource  => 'openstack-core-clone',
-      second_resource => "${::ceilometer::params::agent_notification_service_name}-clone",
-      first_action    => 'start',
-      second_action   => 'start',
-      require         => [Pacemaker::Resource::Service[$::ceilometer::params::agent_central_service_name],
-                          Pacemaker::Resource::Ocf['openstack-core']],
-    }
     pacemaker::constraint::base { 'ceilometer-central-then-ceilometer-collector-constraint':
       constraint_type => 'order',
       first_resource  => "${::ceilometer::params::agent_central_service_name}-clone",
@@ -1933,15 +1867,6 @@ if hiera('step') >= 4 {
       require => [Pacemaker::Resource::Service[$::aodh::params::evaluator_service_name],
                   Pacemaker::Resource::Service[$::aodh::params::notifier_service_name]],
     }
-    pacemaker::constraint::base { 'aodh-evaluator-then-aodh-listener-constraint':
-      constraint_type => 'order',
-      first_resource  => "${::aodh::params::evaluator_service_name}-clone",
-      second_resource => "${::aodh::params::listener_service_name}-clone",
-      first_action    => 'start',
-      second_action   => 'start',
-      require         => [Pacemaker::Resource::Service[$::aodh::params::evaluator_service_name],
-                          Pacemaker::Resource::Service[$::aodh::params::listener_service_name]],
-    }
     pacemaker::constraint::colocation { 'aodh-listener-with-aodh-evaluator-colocation':
       source  => "${::aodh::params::listener_service_name}-clone",
       target  => "${::aodh::params::evaluator_service_name}-clone",
@@ -1967,15 +1892,6 @@ if hiera('step') >= 4 {
     }
     pacemaker::resource::service { $::gnocchi::params::statsd_service_name :
       clone_params => 'interleave=true',
-    }
-    pacemaker::constraint::base { 'keystone-then-gnocchi-metricd-constraint':
-      constraint_type => 'order',
-      first_resource  => 'openstack-core-clone',
-      second_resource => "${::gnocchi::params::metricd_service_name}-clone",
-      first_action    => 'start',
-      second_action   => 'start',
-      require         => [Pacemaker::Resource::Service[$::gnocchi::params::metricd_service_name],
-                          Pacemaker::Resource::Ocf['openstack-core']],
     }
     pacemaker::constraint::base { 'gnocchi-metricd-then-gnocchi-statsd-constraint':
       constraint_type => 'order',
@@ -2006,6 +1922,15 @@ if hiera('step') >= 4 {
     }
     pacemaker::resource::service { $::heat::params::engine_service_name :
       clone_params => 'interleave=true',
+    }
+    pacemaker::constraint::base { 'keystone-then-heat-api-constraint':
+      constraint_type => 'order',
+      first_resource  => 'openstack-core-clone',
+      second_resource => "${::heat::params::api_service_name}-clone",
+      first_action    => 'start',
+      second_action   => 'start',
+      require         => [Pacemaker::Resource::Service[$::heat::params::api_service_name],
+                          Pacemaker::Resource::Ocf['openstack-core']],
     }
     pacemaker::constraint::base { 'heat-api-then-heat-api-cfn-constraint':
       constraint_type => 'order',
@@ -2104,29 +2029,6 @@ if hiera('step') >= 4 {
 } #END STEP 4
 
 if hiera('step') >= 5 {
-  # We now make sure that the root db password is set to a random one
-  # At first installation /root/.my.cnf will be empty and we connect without a root
-  # password. On second runs or updates /root/.my.cnf will already be populated
-  # with proper credentials. This step happens on every node because this sql
-  # statement does not automatically replicate across nodes.
-  $mysql_root_password = hiera('mysql::server::root_password')
-  exec { 'galera-set-root-password':
-    command => "/bin/touch /root/.my.cnf && /bin/echo \"UPDATE mysql.user SET Password = PASSWORD('${mysql_root_password}') WHERE user = 'root'; flush privileges;\" | /bin/mysql --defaults-extra-file=/root/.my.cnf -u root",
-  }
-  file { '/root/.my.cnf' :
-    ensure  => file,
-    mode    => '0600',
-    owner   => 'root',
-    group   => 'root',
-    content => "[client]
-user=root
-password=\"${mysql_root_password}\"
-
-[mysql]
-user=root
-password=\"${mysql_root_password}\"",
-    require => Exec['galera-set-root-password'],
-  }
 
   if $pacemaker_master {
 

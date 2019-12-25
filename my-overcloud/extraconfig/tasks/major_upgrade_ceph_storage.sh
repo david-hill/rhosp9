@@ -7,10 +7,7 @@ set -eu
 
 UPGRADE_SCRIPT=/root/tripleo_upgrade_node.sh
 
-declare -f special_case_ovs_upgrade_if_needed > $UPGRADE_SCRIPT
-# use >> here so we don't lose the declaration we added above
-cat >> $UPGRADE_SCRIPT << ENDOFCAT
-#!/bin/bash
+cat > $UPGRADE_SCRIPT << ENDOFCAT
 ### DO NOT MODIFY THIS FILE
 ### This file is automatically delivered to the ceph-storage nodes as part of the
 ### tripleo upgrades workflow
@@ -25,11 +22,6 @@ function systemctl_ceph {
 ceph osd set noout
 
 systemctl_ceph stop
-
-# Always ensure yum has full cache
-yum makecache || echo "Yum makecache failed. This can cause failure later on."
-
-special_case_ovs_upgrade_if_needed
 yum -y install python-zaqarclient  # needed for os-collect-config
 yum -y update
 systemctl_ceph start

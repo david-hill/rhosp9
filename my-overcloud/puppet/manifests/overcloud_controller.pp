@@ -39,11 +39,6 @@ if hiera('step') >= 2 {
 
   if count(hiera('ntp::servers')) > 0 {
     include ::ntp
-    ensure_resource('service', 'chronyd', {
-      ensure => 'stopped',
-      enable => false,
-    })
-    Service['chronyd'] -> Class['ntp']
   }
 
   include ::timezone
@@ -138,6 +133,13 @@ if hiera('step') >= 2 {
   if count($rabbit_nodes) > 1 {
 
     $rabbit_ipv6 = str2bool(hiera('rabbit_ipv6', false))
+    if $rabbit_ipv6 {
+      $rabbit_env = merge(hiera('rabbitmq_environment'), {
+        'RABBITMQ_SERVER_START_ARGS' => '"-proto_dist inet6_tcp"'
+      })
+    } else {
+      $rabbit_env = hiera('rabbitmq_environment')
+    }
 
     class { '::rabbitmq':
       config_cluster          => true,
@@ -145,8 +147,7 @@ if hiera('step') >= 2 {
       tcp_keepalive           => false,
       config_kernel_variables => hiera('rabbitmq_kernel_variables'),
       config_variables        => hiera('rabbitmq_config_variables'),
-      environment_variables   => hiera('rabbitmq_environment'),
-      ipv6                    => $rabbit_ipv6,
+      environment_variables   => $rabbit_env,
     }
     rabbitmq_policy { 'ha-all@/':
       pattern    => '^(?!amq\.).*',
@@ -278,12 +279,7 @@ if hiera('step') >= 3 {
   }
 
   class { '::nova' :
-    memcached_servers => $memcached_servers,
-  }
-  class { '::nova::cache' :
-    backend          => 'oslo_cache.memcache_pool',
-    enabled          => true,
-    memcache_servers => $memcached_servers,
+    memcached_servers => $memcached_servers
   }
   include ::nova::config
   include ::nova::api
@@ -371,12 +367,8 @@ if hiera('step') >= 3 {
     include ::neutron::agents::dhcp
     include ::neutron::agents::metadata
 
-    $dnsmasq_options = hiera('neutron_dnsmasq_options', '')
-
-    # We need to create the dnsmasq-neutron.conf file regardless of
-    # whether there are configured options or the dhcp agent will fail.
     file { '/etc/neutron/dnsmasq-neutron.conf':
-      content => $dnsmasq_options,
+      content => hiera('neutron_dnsmasq_options'),
       owner   => 'neutron',
       group   => 'neutron',
       notify  => Service['neutron-dhcp-service'],
@@ -588,7 +580,6 @@ if hiera('step') >= 3 {
   include ::swift::proxy::catch_errors
   include ::swift::proxy::tempurl
   include ::swift::proxy::formpost
-  include ::swift::proxy::bulk
 
   # swift storage
   if str2bool(hiera('enable_swift_storage', true)) {
@@ -669,7 +660,7 @@ if hiera('step') >= 3 {
   } else {
     $_profile_support = 'None'
   }
-  $neutron_options   = merge({'profile_support' => $_profile_support },hiera('horizon::neutron_options',undef))
+  $neutron_options   = {'profile_support' => $_profile_support }
 
   $memcached_ipv6 = hiera('memcached_ipv6', false)
   if $memcached_ipv6 {
@@ -681,7 +672,6 @@ if hiera('step') >= 3 {
   class { '::horizon':
     cache_server_ip => $horizon_memcached_servers,
     neutron_options => $neutron_options,
-    help_url        => 'https://access.redhat.com/documentation/en/red-hat-openstack-platform/',
   }
 
   # Gnocchi
@@ -709,15 +699,9 @@ if hiera('step') >= 3 {
     authtype => 'MD5',
     authpass => hiera('snmpd_readonly_user_password'),
   }
-  include ::stdlib
-  if empty(any2array(hiera('snmpd_config_override', ''))) {
-    $snmpd_config_real = [ join(['createUser ', hiera('snmpd_readonly_user_name'), ' MD5 "', hiera('snmpd_readonly_user_password'), '"']), join(['rouser ', hiera('snmpd_readonly_user_name')]), 'proc  cron', 'includeAllDisks  10%', 'master agentx', 'trapsink localhost public', 'iquerySecName internalUser', 'rouser internalUser', 'defaultMonitors yes', 'linkUpDownNotifications yes' ]
-  } else {
-    $snmpd_config_real = any2array(hiera('snmpd_config_override', ''))
-  }
   class { '::snmp':
     agentaddress => ['udp:161','udp6:[::1]:161'],
-    snmpd_config => $snmpd_config_real,
+    snmpd_config => [ join(['createUser ', hiera('snmpd_readonly_user_name'), ' MD5 "', hiera('snmpd_readonly_user_password'), '"']), join(['rouser ', hiera('snmpd_readonly_user_name')]), 'proc  cron', 'includeAllDisks  10%', 'master agentx', 'trapsink localhost public', 'iquerySecName internalUser', 'rouser internalUser', 'defaultMonitors yes', 'linkUpDownNotifications yes' ],
   }
 
   hiera_include('controller_classes')

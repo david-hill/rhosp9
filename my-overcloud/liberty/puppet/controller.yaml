@@ -4,11 +4,6 @@ description: >
   OpenStack controller node configured by Puppet.
 
 parameters:
-  AdminEmail:
-    default: 'admin@example.com'
-    description: The email for the keystone admin account.
-    type: string
-    hidden: true
   AdminPassword:
     description: The password for the keystone admin account, used for monitoring, querying neutron etc.
     type: string
@@ -338,10 +333,6 @@ parameters:
     default: false
     description: Whether IPtables rules should be purged before setting up the new ones.
     type: boolean
-  KeystoneRegion:
-    type: string
-    default: 'regionOne'
-    description: Keystone region for endpoint
   KeystoneWorkers:
     default: 0
     description: Number of workers for Keystone service.
@@ -364,10 +355,6 @@ parameters:
     description: Configures MySQL max_connections config setting
     type: number
     default: 4096
-  MysqlClustercheckPassword:
-    type: string
-    hidden: true
-    default: "''" # Need to set a default to avoid missing property value errors on minor updates
   MysqlRootPassword:
     type: string
     hidden: true
@@ -595,7 +582,7 @@ parameters:
         Specifies the interface where the public-facing virtual ip will be assigned.
         This should be int_public when a VLAN is being used.
     type: string
-  PublicVirtualIP:
+  PublicVirtualIP: # DEPRECATED: use per service settings instead
     type: string
     default: ''  # Has to be here because of the ignored empty value bug
   RabbitCookie:
@@ -603,6 +590,7 @@ parameters:
     default: ''  # Has to be here because of the ignored empty value bug
     hidden: true
   RabbitPassword:
+    default: guest
     description: The password for RabbitMQ
     type: string
     hidden: true
@@ -621,7 +609,7 @@ parameters:
     description: Set rabbit subscriber port, change this if using SSL
     type: number
   RabbitFDLimit:
-    default: 65536
+    default: 16384
     description: Configures RabbitMQ FD limit
     type: string
   RabbitIPv6:
@@ -975,7 +963,6 @@ resources:
         heat_enable_db_purge: {get_param: HeatEnableDBPurge}
         horizon_allowed_hosts: {get_param: HorizonAllowedHosts}
         horizon_secret: {get_param: HorizonSecret}
-        admin_email: {get_param: AdminEmail}
         admin_password: {get_param: AdminPassword}
         admin_token: {get_param: AdminToken}
         neutron_public_interface_ip: {get_param: NeutronPublicInterfaceIP}
@@ -1060,7 +1047,6 @@ resources:
         mysql_innodb_buffer_pool_size: {get_param: MysqlInnodbBufferPoolSize}
         mysql_max_connections: {get_param: MysqlMaxConnections}
         mysql_root_password: {get_param: MysqlRootPassword}
-        mysql_clustercheck_password: {get_param: MysqlClustercheckPassword}
         mysql_cluster_name:
           str_replace:
             template: tripleo-CLUSTER
@@ -1243,7 +1229,6 @@ resources:
         heat_api_network: {get_attr: [NetIpMap, net_ip_map, {get_param: [ServiceNetMap, HeatApiNetwork]}]}
         keystone_public_api_network: {get_attr: [NetIpMap, net_ip_map, {get_param: [ServiceNetMap, KeystonePublicApiNetwork]}]}
         keystone_admin_api_network: {get_attr: [NetIpMap, net_ip_map, {get_param: [ServiceNetMap, KeystoneAdminApiNetwork]}]}
-        keystone_region: {get_param: KeystoneRegion}
         mongo_db_network: {get_attr: [NetIpMap, net_ip_map, {get_param: [ServiceNetMap, MongoDbNetwork]}]}
         neutron_api_network: {get_attr: [NetIpMap, net_ip_map, {get_param: [ServiceNetMap, NeutronApiNetwork]}]}
         neutron_local_ip: {get_attr: [NetIpMap, net_ip_map, {get_param: [ServiceNetMap, NeutronTenantNetwork]}]}
@@ -1294,7 +1279,6 @@ resources:
             - neutron_nuage_data # Optionally provided by ControllerExtraConfigPre
             - midonet_data #Optionally provided by AllNodesExtraConfig
             - neutron_opencontrail_data # Optionally provided by ControllerExtraConfigPre
-            - neutron_plumgrid_data # Optionally provided by ControllerExtraConfigPre
           datafiles:
             controller_extraconfig:
               mapped_data: {get_param: ControllerExtraConfig}
@@ -1423,6 +1407,7 @@ resources:
 
                 # Keystone
                 keystone::admin_token: {get_input: admin_token}
+                keystone::roles::admin::password: {get_input: admin_password}
                 keystone_ca_certificate: {get_input: keystone_ca_certificate}
                 keystone_signing_key: {get_input: keystone_signing_key}
                 keystone_signing_certificate: {get_input: keystone_signing_certificate}
@@ -1444,14 +1429,6 @@ resources:
                 keystone_enable_db_purge: {get_input: keystone_enable_db_purge}
 
                 keystone::public_endpoint: {get_input: keystone_public_url}
-
-                keystone::roles::admin::email: {get_input: admin_email}
-                keystone::roles::admin::password: {get_input: admin_password}
-                keystone::endpoint::public_url: {get_input: keystone_public_url}
-                keystone::endpoint::internal_url: {get_input: keystone_internal_url}
-                keystone::endpoint::admin_url: {get_input: keystone_identity_uri}
-                keystone::endpoint::region: {get_input: keystone_region}
-
                 # MongoDB
                 mongodb::server::bind_ip: {get_input: mongo_db_network}
                 mongodb::server::nojournal: {get_input: mongodb_no_journal}
@@ -1464,7 +1441,6 @@ resources:
                 mysql_innodb_buffer_pool_size: {get_input: mysql_innodb_buffer_pool_size}
                 mysql_max_connections: {get_input: mysql_max_connections}
                 mysql::server::root_password: {get_input: mysql_root_password}
-                mysql_clustercheck_password: {get_input: mysql_clustercheck_password}
                 mysql_cluster_name: {get_input: mysql_cluster_name}
                 mysql_bind_host: {get_input: mysql_network}
                 mysql_virtual_ip: {get_input: mysql_virtual_ip}

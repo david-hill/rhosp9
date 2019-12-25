@@ -47,6 +47,9 @@ parameters:
       KeystoneAdmin: {protocol: http, port: '35357', host: IP_ADDRESS}
       KeystoneInternal: {protocol: http, port: '5000', host: IP_ADDRESS}
       KeystonePublic: {protocol: http, port: '5000', host: IP_ADDRESS}
+      KeystoneV3Admin: {protocol: http, port: '35357', host: IP_ADDRESS}
+      KeystoneV3Internal: {protocol: http, port: '5000', host: IP_ADDRESS}
+      KeystoneV3Public: {protocol: http, port: '5000', host: IP_ADDRESS}
       NeutronAdmin: {protocol: http, port: '9696', host: IP_ADDRESS}
       NeutronInternal: {protocol: http, port: '9696', host: IP_ADDRESS}
       NeutronPublic: {protocol: http, port: '9696', host: IP_ADDRESS}
@@ -1078,119 +1081,119 @@ outputs:
         host:
           str_replace:
             template:
-              get_param: [EndpointMap, KeystoneAdmin, host]
+              get_param: [EndpointMap, KeystoneV3Admin, host]
             params:
               CLOUDNAME: {get_param: CloudName}
               IP_ADDRESS: {get_param: KeystoneAdminApiVirtualIP}
         port:
-          get_param: [EndpointMap, KeystoneAdmin, port]
+          get_param: [EndpointMap, KeystoneV3Admin, port]
         protocol:
-          get_param: [EndpointMap, KeystoneAdmin, protocol]
+          get_param: [EndpointMap, KeystoneV3Admin, protocol]
         uri:
           list_join:
           - ''
-          - - get_param: [EndpointMap, KeystoneAdmin, protocol]
+          - - get_param: [EndpointMap, KeystoneV3Admin, protocol]
             - ://
             - str_replace:
                 template:
-                  get_param: [EndpointMap, KeystoneAdmin, host]
+                  get_param: [EndpointMap, KeystoneV3Admin, host]
                 params:
                   CLOUDNAME: {get_param: CloudName}
                   IP_ADDRESS: {get_param: KeystoneAdminApiVirtualIP}
             - ':'
-            - get_param: [EndpointMap, KeystoneAdmin, port]
+            - get_param: [EndpointMap, KeystoneV3Admin, port]
             - /v3
         uri_no_suffix:
           list_join:
           - ''
-          - - get_param: [EndpointMap, KeystoneAdmin, protocol]
+          - - get_param: [EndpointMap, KeystoneV3Admin, protocol]
             - ://
             - str_replace:
                 template:
-                  get_param: [EndpointMap, KeystoneAdmin, host]
+                  get_param: [EndpointMap, KeystoneV3Admin, host]
                 params:
                   CLOUDNAME: {get_param: CloudName}
                   IP_ADDRESS: {get_param: KeystoneAdminApiVirtualIP}
             - ':'
-            - get_param: [EndpointMap, KeystoneAdmin, port]
+            - get_param: [EndpointMap, KeystoneV3Admin, port]
       KeystoneV3Internal:
         host:
           str_replace:
             template:
-              get_param: [EndpointMap, KeystoneInternal, host]
+              get_param: [EndpointMap, KeystoneV3Internal, host]
             params:
               CLOUDNAME: {get_param: CloudName}
               IP_ADDRESS: {get_param: KeystonePublicApiVirtualIP}
         port:
-          get_param: [EndpointMap, KeystoneInternal, port]
+          get_param: [EndpointMap, KeystoneV3Internal, port]
         protocol:
-          get_param: [EndpointMap, KeystoneInternal, protocol]
+          get_param: [EndpointMap, KeystoneV3Internal, protocol]
         uri:
           list_join:
           - ''
-          - - get_param: [EndpointMap, KeystoneInternal, protocol]
+          - - get_param: [EndpointMap, KeystoneV3Internal, protocol]
             - ://
             - str_replace:
                 template:
-                  get_param: [EndpointMap, KeystoneInternal, host]
+                  get_param: [EndpointMap, KeystoneV3Internal, host]
                 params:
                   CLOUDNAME: {get_param: CloudName}
                   IP_ADDRESS: {get_param: KeystonePublicApiVirtualIP}
             - ':'
-            - get_param: [EndpointMap, KeystoneInternal, port]
+            - get_param: [EndpointMap, KeystoneV3Internal, port]
             - /v3
         uri_no_suffix:
           list_join:
           - ''
-          - - get_param: [EndpointMap, KeystoneInternal, protocol]
+          - - get_param: [EndpointMap, KeystoneV3Internal, protocol]
             - ://
             - str_replace:
                 template:
-                  get_param: [EndpointMap, KeystoneInternal, host]
+                  get_param: [EndpointMap, KeystoneV3Internal, host]
                 params:
                   CLOUDNAME: {get_param: CloudName}
                   IP_ADDRESS: {get_param: KeystonePublicApiVirtualIP}
             - ':'
-            - get_param: [EndpointMap, KeystoneInternal, port]
+            - get_param: [EndpointMap, KeystoneV3Internal, port]
       KeystoneV3Public:
         host:
           str_replace:
             template:
-              get_param: [EndpointMap, KeystonePublic, host]
+              get_param: [EndpointMap, KeystoneV3Public, host]
             params:
               CLOUDNAME: {get_param: CloudName}
               IP_ADDRESS: {get_param: PublicVirtualIP}
         port:
-          get_param: [EndpointMap, KeystonePublic, port]
+          get_param: [EndpointMap, KeystoneV3Public, port]
         protocol:
-          get_param: [EndpointMap, KeystonePublic, protocol]
+          get_param: [EndpointMap, KeystoneV3Public, protocol]
         uri:
           list_join:
           - ''
-          - - get_param: [EndpointMap, KeystonePublic, protocol]
+          - - get_param: [EndpointMap, KeystoneV3Public, protocol]
             - ://
             - str_replace:
                 template:
-                  get_param: [EndpointMap, KeystonePublic, host]
+                  get_param: [EndpointMap, KeystoneV3Public, host]
                 params:
                   CLOUDNAME: {get_param: CloudName}
                   IP_ADDRESS: {get_param: PublicVirtualIP}
             - ':'
-            - get_param: [EndpointMap, KeystonePublic, port]
+            - get_param: [EndpointMap, KeystoneV3Public, port]
             - /v3
         uri_no_suffix:
           list_join:
           - ''
-          - - get_param: [EndpointMap, KeystonePublic, protocol]
+          - - get_param: [EndpointMap, KeystoneV3Public, protocol]
             - ://
             - str_replace:
                 template:
-                  get_param: [EndpointMap, KeystonePublic, host]
+                  get_param: [EndpointMap, KeystoneV3Public, host]
                 params:
                   CLOUDNAME: {get_param: CloudName}
                   IP_ADDRESS: {get_param: PublicVirtualIP}
             - ':'
-            - get_param: [EndpointMap, KeystonePublic, port]
+            - get_param: [EndpointMap, KeystoneV3Public, port]
       NeutronAdmin:
         host:
           str_replace:

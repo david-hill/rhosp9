@@ -7,7 +7,7 @@ nova::vncproxy::enabled: true
 nova::scheduler::enabled: true
 
 # gnocchi
-gnocchi::db::sync::extra_opts: '--skip-storage --create-legacy-resource-types'
+gnocchi::db::sync::extra_opts: '--skip-storage'
 gnocchi::storage::swift::swift_user: 'service:gnocchi'
 gnocchi::storage::swift::swift_auth_version: 2
 gnocchi::statsd::resource_id: '0a8b55df-f90f-491c-8cb9-7cdecec6fc26'
@@ -70,16 +70,13 @@ keystone::config::keystone_config:
     value: 'keystone.contrib.ec2.backends.sql.Ec2'
 keystone::service_name: 'httpd'
 keystone::wsgi::apache::ssl: false
-keystone::wsgi::apache::threads: 1
 
 #swift
 swift::proxy::pipeline:
   - 'catch_errors'
   - 'healthcheck'
-  - 'proxy-logging'
   - 'cache'
   - 'ratelimit'
-  - 'bulk'
   - 'tempurl'
   - 'formpost'
   - 'authtoken'
@@ -109,7 +106,6 @@ nova::scheduler::filter::ram_allocation_ratio: '1.0'
 nova::cron::archive_deleted_rows::hour: '*/12'
 nova::cron::archive_deleted_rows::destination: '/dev/null'
 nova::notification_driver: messaging
-nova::api::secure_proxy_ssl_header: 'HTTP_X_FORWARDED_PROTO'
 
 # ceilometer
 ceilometer::agent::auth::auth_endpoint_type: 'internalURL'
@@ -249,8 +245,6 @@ tripleo::firewall::firewall_rules:
     port: 3260
   '121 memcached':
     port: 11211
-    proto: 'tcp'
-    source: "%{hiera('memcached_internal_network')}"
   '122 swift proxy':
     port:
       - 8080
@@ -288,16 +282,3 @@ tripleo::firewall::firewall_rules:
     port:
       - 8041
       - 13041
-  '130 pacemaker tcp':
-    proto: 'tcp'
-    dport:
-      - 2224
-      - 3121
-      - 21064
-  '131 pacemaker udp':
-    proto: 'udp'
-    dport: 5405
-  '132 sahara':
-    dport:
-      - 8386
-      - 13386

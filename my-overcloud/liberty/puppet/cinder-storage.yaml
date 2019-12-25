@@ -51,6 +51,7 @@ parameters:
     description: Name of an existing EC2 KeyPair to enable SSH access to the instances
     type: string
   RabbitPassword:
+    default: 'guest'
     type: string
     hidden: true
   RabbitUserName:

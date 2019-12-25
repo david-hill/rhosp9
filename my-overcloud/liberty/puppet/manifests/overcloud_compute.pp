@@ -90,6 +90,9 @@ if str2bool(hiera('nova::use_ipv6', false)) {
 } else {
   $vncserver_listen = '0.0.0.0'
 }
+class { '::nova::compute::libvirt' :
+  vncserver_listen => $vncserver_listen,
+}
 
 # TUNNELLED mode provides a security enhancement when using shared storage but is not
 # supported when not using shared storage.
@@ -117,69 +120,6 @@ nova_config {
   'libvirt/block_migration_flag':      value => $block_migration_flag;
   'libvirt/live_migration_flag':       value => $live_migration_flag;
 }
-
-# START CVE-2017-2637 - Switch to SSH for migration
-# Libvirt setup (live-migration)
-class { '::nova::migration::libvirt':
-  transport          => 'ssh',
-  client_user        => 'nova_migration',
-  client_extraparams => {'keyfile' => '/etc/nova/migration/identity'}
-}
-
-class { '::nova::compute::libvirt' :
-  vncserver_listen => $vncserver_listen,
-}
-
-# Nova SSH tunnel setup (cold-migration)
-# Server side
-include ::ssh::server
-$allow_type = sprintf('LocalAddress %s User', join(hiera('migration_ssh_localaddrs'),','))
-$allow_name = 'nova_migration'
-$deny_type = 'LocalAddress'
-$deny_name = sprintf('!%s', join(hiera('migration_ssh_localaddrs'),',!'))
-ssh::server::match_block { 'nova_migration deny':
-  name    => $deny_name,
-  type    => $deny_type,
-  order   => 2,
-  options => {
-    'DenyUsers' => 'nova_migration'
-  },
-  notify  => Service['sshd']
-}
-ssh::server::match_block { 'nova_migration allow':
-  name    => $allow_name,
-  type    => $allow_type,
-  order   => 1,
-  options => {
-    'ForceCommand'           => '/bin/nova-migration-wrapper',
-    'PasswordAuthentication' => 'no',
-    'AllowTcpForwarding'     => 'no',
-    'X11Forwarding'          => 'no',
-    'AuthorizedKeysFile'     => '/etc/nova/migration/authorized_keys'
-  },
-  notify  => Service['sshd']
-}
-$migration_ssh_key = hiera('migration_ssh_key')
-file { '/etc/nova/migration/authorized_keys':
-  content => $migration_ssh_key['public_key'],
-  mode    => '0640',
-  owner   => 'root',
-  group   => 'nova_migration',
-  require => Package['openstack-nova-migration'],
-}
-# Client side
-file { '/etc/nova/migration/identity':
-  content => $migration_ssh_key['private_key'],
-  mode    => '0600',
-  owner   => 'nova',
-  group   => 'nova',
-  require => Package['openstack-nova-migration'],
-}
-
-package {'openstack-nova-migration':
-  ensure => installed
-}
-# END CVE-2017-2637118
 
 if hiera('neutron::core_plugin') == 'midonet.neutron.plugin_v1.MidonetPluginV2' {
   file {'/etc/libvirt/qemu.conf':
@@ -224,20 +164,8 @@ if hiera('neutron::core_plugin') == 'neutron.plugins.nuage.plugin.NuagePlugin' {
   #class {'::contrail::vrouter::provision_vrouter':
   #  require => Class['contrail::vrouter'],
   #}
-} elsif hiera('neutron::core_plugin') == 'networking_plumgrid.neutron.plugins.plugin.NeutronPluginPLUMgridV2' {
-  # forward all ipv4 traffic
-  # this is required for the vms to pass through the gateways public interface
-  sysctl::value { 'net.ipv4.ip_forward': value => '1' }
-
-  # ifc_ctl_pp needs to be invoked by root as part of the vif.py when a VM is powered on
-  file { '/etc/sudoers.d/ifc_ctl_sudoers':
-    ensure  => file,
-    owner   => root,
-    group   => root,
-    mode    => '0440',
-    content => "nova ALL=(root) NOPASSWD: /opt/pg/bin/ifc_ctl_pp *\n",
-  }
-} else {
+}
+else {
 
   # NOTE: this code won't live in puppet-neutron until Neutron OVS agent
   # can be gracefully restarted. See https://review.openstack.org/#/c/297211

@@ -22,11 +22,6 @@ Exec <| tag == 'kmod::load' |>  -> Sysctl <| |>
 
 if count(hiera('ntp::servers')) > 0 {
   include ::ntp
-  ensure_resource('service', 'chronyd', {
-    ensure => 'stopped',
-    enable => false,
-  })
-  Service['chronyd'] -> Class['ntp']
 }
 
 include ::timezone
@@ -90,7 +85,17 @@ if hiera('cinder_enable_nfs_backend', false) {
   package {'nfs-utils': } -> Service['nova-compute']
 }
 
+if str2bool(hiera('nova::use_ipv6', false)) {
+  $vncserver_listen = '::0'
+} else {
+  $vncserver_listen = '0.0.0.0'
+}
+class { '::nova::compute::libvirt' :
+  vncserver_listen => $vncserver_listen,
+}
+
 nova_config {
+  'DEFAULT/my_ip':                     value => $ipaddress;
   'DEFAULT/linuxnet_interface_driver': value => 'nova.network.linux_net.LinuxOVSInterfaceDriver';
   'DEFAULT/host':                      value => $fqdn;
   # TUNNELLED mode provides a security enhancement when using shared storage but is not
@@ -100,70 +105,6 @@ nova_config {
   # work will obsolete the need to use TUNNELLED transport mode.
   'libvirt/live_migration_tunnelled':  value => $rbd_ephemeral_storage;
 }
-
-# START CVE-2017-2637 - Switch to SSH for migration
-# Libvirt setup (live-migration)
-class { '::nova::migration::libvirt':
-  transport          => 'ssh',
-  client_user        => 'nova_migration',
-  client_extraparams => {'keyfile' => '/etc/nova/migration/identity'} # lint:ignore:arrow_alignment
-}
-
-class { '::nova::compute::libvirt':
-  migration_support => false
-}
-
-# Nova SSH tunnel setup (cold-migration)
-# Server side
-include ::ssh::server
-$migration_ssh_localaddrs_real = unique(hiera('migration_ssh_localaddrs'))
-$allow_type = sprintf('LocalAddress %s User', join($migration_ssh_localaddrs_real,','))
-$allow_name = 'nova_migration'
-$deny_type = 'LocalAddress'
-$deny_name = sprintf('!%s', join($migration_ssh_localaddrs_real,',!'))
-ssh::server::match_block { 'nova_migration deny':
-  name    => $deny_name,
-  type    => $deny_type,
-  order   => 2,
-  options => {
-    'DenyUsers' => 'nova_migration'
-  },
-  notify  => Service['sshd']
-}
-ssh::server::match_block { 'nova_migration allow':
-  name    => $allow_name,
-  type    => $allow_type,
-  order   => 1,
-  options => {
-    'ForceCommand'           => '/bin/nova-migration-wrapper',
-    'PasswordAuthentication' => 'no',
-    'AllowTcpForwarding'     => 'no',
-    'X11Forwarding'          => 'no',
-    'AuthorizedKeysFile'     => '/etc/nova/migration/authorized_keys'
-  },
-  notify  => Service['sshd']
-}
-$migration_ssh_key = hiera('migration_ssh_key')
-file { '/etc/nova/migration/authorized_keys':
-  content => $migration_ssh_key['public_key'],
-  mode    => '0640',
-  owner   => 'root',
-  group   => 'nova_migration',
-  require => Package['openstack-nova-migration'],
-}
-# Client side
-file { '/etc/nova/migration/identity':
-  content => $migration_ssh_key['private_key'],
-  mode    => '0600',
-  owner   => 'nova',
-  group   => 'nova',
-  require => Package['openstack-nova-migration'],
-}
-
-package {'openstack-nova-migration':
-  ensure => installed
-}
-# END CVE-2017-2637118
 
 if hiera('neutron::core_plugin') == 'midonet.neutron.plugin_v1.MidonetPluginV2' {
   file {'/etc/libvirt/qemu.conf':
@@ -266,15 +207,9 @@ snmp::snmpv3_user { $snmpd_user:
   authtype => 'MD5',
   authpass => hiera('snmpd_readonly_user_password'),
 }
-include ::stdlib
-if empty(any2array(hiera('snmpd_config_override', ''))) {
-  $snmpd_config_real = [ join(['createUser ', hiera('snmpd_readonly_user_name'), ' MD5 "', hiera('snmpd_readonly_user_password'), '"']), join(['rouser ', hiera('snmpd_readonly_user_name')]), 'proc  cron', 'includeAllDisks  10%', 'master agentx', 'trapsink localhost public', 'iquerySecName internalUser', 'rouser internalUser', 'defaultMonitors yes', 'linkUpDownNotifications yes' ]
-} else {
-  $snmpd_config_real = any2array(hiera('snmpd_config_override', ''))
-}
 class { '::snmp':
   agentaddress => ['udp:161','udp6:[::1]:161'],
-  snmpd_config => $snmpd_config_real,
+  snmpd_config => [ join(['createUser ', hiera('snmpd_readonly_user_name'), ' MD5 "', hiera('snmpd_readonly_user_password'), '"']), join(['rouser ', hiera('snmpd_readonly_user_name')]), 'proc  cron', 'includeAllDisks  10%', 'master agentx', 'trapsink localhost public', 'iquerySecName internalUser', 'rouser internalUser', 'defaultMonitors yes', 'linkUpDownNotifications yes' ],
 }
 
 hiera_include('compute_classes')

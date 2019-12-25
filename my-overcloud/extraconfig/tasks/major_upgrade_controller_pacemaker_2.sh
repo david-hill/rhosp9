@@ -6,7 +6,7 @@ cluster_form_timeout=600
 cluster_settle_timeout=600
 galera_sync_timeout=600
 
-if [[ -n $(is_bootstrap_node) ]]; then
+if [ "$(hiera -c /etc/puppet/hiera.yaml bootstrap_nodeid)" = "$(facter hostname)" ]; then
     pcs cluster start --all
 
     tstart=$(date +%s)
@@ -60,8 +60,10 @@ if [[ -n $(is_bootstrap_node) ]]; then
     check_resource rabbitmq started 600
     pcs resource enable redis
     check_resource redis started 600
-    pcs resource enable openstack-core
-    check_resource openstack-core started 1800
+    if pcs status | grep openstack-keystone; then
+        pcs resource enable openstack-keystone
+        check_resource openstack-keystone started 1800
+    fi
     pcs resource enable httpd
     check_resource httpd started 1800
 fi

@@ -66,15 +66,6 @@ parameters:
     default: 5672
     description: Set rabbit subscriber port, change this if using SSL
     type: number
-  SnmpdConfigOverride:
-    default: []
-    description: An array of snmp config.
-    # Example: ['proc neutron-server', 'proc nova-api']
-    # Note: since we give total freedom to configure snmpd_config and don't
-    # verify the content, the user will have to ensure that the parameters
-    # related to user / password in the array, are the same given to
-    # THT via SnmpdReadonlyUserName and SnmpdReadonlyUserPassword.
-    type: json
   SnmpdReadonlyUserName:
     default: ro_snmp_user
     description: The user name for SNMPd with readonly rights running on all Overcloud nodes
@@ -285,7 +276,6 @@ resources:
       input_values:
         debug: {get_param: Debug}
         cinder_dsn: {list_join: ['', ['mysql+pymysql://cinder:', {get_param: CinderPassword}, '@', {get_param: MysqlVirtualIPUri} , '/cinder']]}
-        snmpd_config_override: {get_param: SnmpdConfigOverride}
         snmpd_readonly_user_name: {get_param: SnmpdReadonlyUserName}
         snmpd_readonly_user_password: {get_param: SnmpdReadonlyUserPassword}
         cinder_lvm_loop_device_size:
@@ -352,7 +342,6 @@ resources:
                 timezone::timezone: {get_input: timezone}
                 tripleo::packages::enable_install: {get_input: enable_package_install}
                 tripleo::packages::enable_upgrade: {get_input: enable_package_upgrade}
-                snmpd_config_override: {get_input: snmpd_config_override}
                 snmpd_readonly_user_name: {get_input: snmpd_readonly_user_name}
                 snmpd_readonly_user_password: {get_input: snmpd_readonly_user_password}
 

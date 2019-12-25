@@ -22,10 +22,6 @@ function systemctl_swift {
     done
 }
 
-# Always ensure yum has full cache
-yum makecache || echo "Yum makecache failed. This can cause failure later on."
-$(declare -f special_case_ovs_upgrade_if_needed)
-special_case_ovs_upgrade_if_needed
 
 systemctl_swift stop
 
